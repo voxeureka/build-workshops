@@ -126,7 +126,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 .tag{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:12px;letter-spacing:.1em;text-transform:uppercase}
 .tag i{width:14px;height:14px;border-radius:50%;background:var(--pc);flex:none}
 .pair ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}
-.pair li{font-weight:700;font-size:16px}
+.pair li{font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pair li .you{margin-left:0}
 .you{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--on-primary);background:var(--primary);border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:2px}
 .acts{display:flex;gap:6px;flex-wrap:wrap}
 .filed{font-weight:700;font-size:13px;color:var(--ok)}
@@ -136,6 +137,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .pax .nmx{font-weight:700;flex:1;min-width:0}
 .pax .src{font-size:12px;color:var(--muted)}
 .pax.mine{border-color:var(--primary);border-width:2px}
+.note{border-left:4px solid var(--mauve);background:var(--sunk);border-radius:0 8px 8px 0;padding:10px 12px;font-size:15px;margin-bottom:10px}
 .empty{color:var(--muted);font-size:15px;background:var(--surface);border:1px dashed var(--line);border-radius:var(--r);padding:14px}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px;width:100%}
 .side{display:grid;gap:14px}
@@ -263,8 +265,8 @@ details.out li span{flex:1;text-decoration:line-through}
       <p class="muted" style="margin:0;max-width:64ch">Four steps. They mean the three hours in the room go into building, not deciding what to build.</p>
       <div class="how">
         <div><b>STEP 1</b><h3>Find your workshop</h3><p>Select it in the list above. Names from the sign-up form are already there.</p></div>
-        <div><b>STEP 2</b><h3>Confirm your name</h3><p>Select "This is me". Not on the list? Add your name. Can't make it? Withdraw so your partner knows.</p></div>
-        <div><b>STEP 3</b><h3>Pick a partner</h3><p>You work in pairs. Each pair gets a colour. Ideally, pair with someone who shares a client with you.</p></div>
+        <div><b>STEP 2</b><h3>Confirm your name</h3><p>Select "This is me". Picked the wrong name? Select "This isn't me". Not on the list? Add your name.</p></div>
+        <div><b>STEP 3</b><h3>Pick a partner</h3><p>You work in pairs. Agree with your partner first, then one of you selects the other. Ideally, pair with someone who shares a client with you.</p></div>
         <div><b>STEP 4</b><h3>Submit your problem list</h3><p>Describe the problem and how you think you will solve it. Only facilitators can read it.</p></div>
       </div>
     </div>
@@ -290,6 +292,7 @@ details.out li span{flex:1;text-decoration:line-through}
         <h3>Pairs <span class="count" id="w-pairs-n"></span></h3>
         <div class="grid" id="w-pairs"></div>
         <h3 style="margin-top:24px">Looking for a partner <span class="count" id="w-solo-n"></span></h3>
+        <div class="note" id="w-note"><b>Talk to your partner before you pair.</b> Pairing happens straight away for both of you, so only select "Pair with" once they have said yes. Only one of you needs to do it.</div>
         <div class="solo" id="w-solo"></div>
       </div>
       <aside class="side">
@@ -371,7 +374,7 @@ details.out li span{flex:1;text-decoration:line-through}
     <div class="vault" id="vault">
       <div class="eyebrow">Facilitators only</div>
       <h3 style="font-size:28px">Read problem lists</h3>
-      <p>Enter the facilitator password to read and download submissions. You will also get your workshop's problem lists by email when its deadline passes.</p>
+      <p>Enter the facilitator password to read and download submissions. You will also get your workshop's participants and problem lists by email the day before it runs.</p>
       <form class="inline" id="unlockForm" autocomplete="off" style="max-width:520px">
         <input type="password" id="pass" placeholder="Facilitator password" aria-label="Facilitator password" autocomplete="off">
         <button class="btn primary" type="submit" id="unlockBtn">Open</button>
@@ -408,7 +411,7 @@ const CONNECTED = /^https:\/\/script\.google\.com\//.test(API_URL) || /^https?:\
 
 const store = {get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 let people = new Map(), submitted = {}, loaded = false, busy = false;
-let me = store.get('bw.me'), confirmOut = null, cur = null;
+let me = store.get('bw.me'), confirmOut = null, confirmPair = null, cur = null;
 let pw = null, subs = [];
 
 const $ = s=>document.querySelector(s);
@@ -481,7 +484,7 @@ function route(){
   cur = WS[h]?h:null;
   ['workshops','one','submit','facilitators'].forEach(x=>$('#v-'+x).hidden=x!==v);
   document.querySelectorAll('.tabs a').forEach(a=>{if(a.dataset.tab===(v==='one'?'workshops':v))a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')});
-  confirmOut=null; render(); window.scrollTo(0,0);
+  confirmOut=null; confirmPair=null; render(); window.scrollTo(0,0);
   if(v==='submit') fillDraft();
 }
 addEventListener('hashchange',route);
@@ -523,7 +526,10 @@ function renderOne(){
   let bar;
   if(!CONNECTED) bar=`<span class="muted">The participant list will appear once this page is connected.</span>`;
   else if(!loaded) bar=`<span class="muted">Loading participants…</span>`;
-  else if(p&&p.status!=='out') bar=`<span>You are <b>${esc(p.name)}</b>${here?'':`. Your workshop is <a href="#${p.workshop}">${esc(WS[p.workshop].name)}, ${esc(WS[p.workshop].date)}</a>`}</span><span class="sp"></span>${here?'':`<button class="btn sm" data-act="move">Move me to this workshop</button>`}<button class="btn sm ghost" data-act="notme">Not you?</button>`;
+  else if(p&&p.status!=='out'){
+    const others=mg?mg.members.filter(m=>m.id!==p.id).map(m=>esc(m.name)).join(' and '):'';
+    bar=`<span>You are <b>${esc(p.name)}</b>${mg?`, paired with <b>${others}</b> in Team ${cap(mg.color)}`:''}${here?'.':`. Your workshop is <a href="#${p.workshop}">${esc(WS[p.workshop].name)}, ${esc(WS[p.workshop].date)}</a>.`}</span><span class="sp"></span>${here?'':`<button class="btn sm" data-act="move">Move me to this workshop</button>`}<button class="btn sm" data-act="notme">This isn't me</button>`;
+  }
   else bar=`<span>Find your name below and select <b>This is me</b>. Not listed? Add your name on the right.</span>`;
   $('#w-me').innerHTML=bar;
 
@@ -532,22 +538,25 @@ function renderOne(){
   $('#w-pairs').innerHTML=!loaded?'':g.pairs.length?g.pairs.map(x=>{
     const mine=x.members.some(m=>m.id===me), sub=x.members.map(m=>submitted[m.id]).find(Boolean);
     let acts='';
-    if(mine) acts = confirmOut===me ? confirmRow(p) : `<a class="btn sm primary" href="#submit">${sub?'Update':'Submit'} problem list</a><button class="btn sm" data-act="split">Split up</button><button class="btn sm danger" data-act="askout">Can't make it</button>`;
-    else if(trioOK) acts=`<button class="btn sm" data-act="trio" data-id="${x.color}">Join as a group of three</button>`;
+    if(mine) acts = confirmOut===me ? confirmRow(p) : `<a class="btn sm primary" href="#submit">${sub?'Update':'Submit'} problem list</a><button class="btn sm" data-act="split">Split up</button><button class="btn sm danger" data-act="askout">Can't make it</button><button class="btn sm ghost" data-act="notme">This isn't me</button>`;
+    else if(trioOK) acts = confirmPair===x.color ? `<span class="confirm">Have ${x.members.map(m=>esc(first(m.name))).join(' and ')} agreed that you can join them?<button class="btn sm primary" data-act="trio" data-id="${x.color}">Yes, add me</button><button class="btn sm ghost" data-act="cancelpair">Not yet</button></span>` : `<button class="btn sm" data-act="asktrio" data-id="${x.color}">Join as a group of three</button>`;
     return `<div class="pair" style="--pc:${CMAP[x.color]}">
       <span class="tag"><i></i>Team ${cap(x.color)}</span>
-      <ul>${x.members.map(m=>`<li>${esc(m.name)}${m.id===me?'<span class="you">You</span>':''}</li>`).join('')}</ul>
+      <ul>${x.members.map(m=>`<li>${esc(m.name)}${m.id===me?'<span class="you">You</span>':''}${(!p||p.status==='out')?` <button class="btn sm" data-act="iam" data-id="${m.id}">This is me</button>`:''}</li>`).join('')}</ul>
       ${sub?`<span class="filed">✓ Problem list submitted ${sub.late?'<span class="late">Late</span>':''}</span>`:''}
       ${acts?`<div class="acts">${acts}</div>`:''}
     </div>`}).join(''):`<div class="empty">No pairs yet. Confirm your name, then pick a partner from the list below.</div>`;
 
   $('#w-solo-n').textContent=loaded?`(${g.solo.length})`:'';
+  $('#w-note').hidden=!loaded||!g.solo.length;
+  if(trioOK) $('#w-note').innerHTML=`<b>You are the last person without a partner.</b> Ask one of the pairs above if you can join them, then select "Join as a group of three" on their card.`;
+  else $('#w-note').innerHTML=`<b>Talk to your partner before you pair.</b> Pairing happens straight away for both of you, so only select "Pair with" once they have said yes. Only one of you needs to do it.`;
   const iAmSolo=here&&g.solo.some(x=>x.id===me);
   $('#w-solo').innerHTML=!loaded?`<div class="empty">${CONNECTED?'Loading…':'Not connected yet.'}</div>`:g.solo.length?g.solo.map(x=>{
     let a='';
-    if(x.id===me) a=confirmOut===me?confirmRow(x):`<button class="btn sm danger" data-act="askout">Can't make it</button>`;
+    if(x.id===me) a=confirmOut===me?confirmRow(x):`<button class="btn sm" data-act="notme">This isn't me</button><button class="btn sm danger" data-act="askout">Can't make it</button>`;
     else if(!p||p.status==='out') a=`<button class="btn sm" data-act="iam" data-id="${x.id}">This is me</button>`;
-    else if(iAmSolo) a=`<button class="btn sm primary" data-act="pair" data-id="${x.id}">Pair with ${esc(first(x.name))}</button>`;
+    else if(iAmSolo) a = confirmPair===x.id ? `<span class="confirm">Has ${esc(first(x.name))} agreed to pair with you?<button class="btn sm primary" data-act="pair" data-id="${x.id}">Yes, pair us</button><button class="btn sm ghost" data-act="cancelpair">Not yet</button></span>` : `<button class="btn sm primary" data-act="askpair" data-id="${x.id}">Pair with ${esc(first(x.name))}</button>`;
     const sub=submitted[x.id];
     return `<div class="pax ${x.id===me?'mine':''}"><span class="nmx">${esc(x.name)}${x.id===me?'<span class="you">You</span>':''}</span>${sub?`<span class="filed">✓ Submitted${sub.late?' <span class="late">Late</span>':''}</span>`:''}${x.source==='added on page'?'<span class="src">added here</span>':''}${a}</div>`}).join('')
     :`<div class="empty">${g.act.length?'Everyone here has a partner.':'Nobody is on the list yet. Add your name on the right.'}</div>`;
@@ -561,13 +570,15 @@ function confirmRow(p){return `<span class="confirm">Remove ${esc(first(p.name))
 $('#v-one').addEventListener('click',async e=>{
   const b=e.target.closest('button[data-act]'); if(!b) return;
   const a=b.dataset.act,id=b.dataset.id,p=meP();
-  if(a==='iam'){me=id;store.set('bw.me',me);render();toast(`You are ${people.get(id).name}. Now pick a partner.`);return}
-  if(a==='notme'){me=null;store.set('bw.me',null);render();return}
+  if(a==='iam'){me=id;store.set('bw.me',me);render();const t=teamFor(id);toast(t?`You are ${people.get(id).name}, in Team ${cap(t.color)} with ${t.members.filter(m=>m.id!==id).map(m=>first(m.name)).join(' and ')}.`:`You are ${people.get(id).name}. Agree a partner, then pair up.`);return}
+  if(a==='notme'){me=null;confirmOut=null;confirmPair=null;store.set('bw.me',null);render();toast('Cleared. Select "This is me" next to the right name.');return}
+  if(a==='askpair'||a==='asktrio'){confirmPair=id;render();return}
+  if(a==='cancelpair'){confirmPair=null;render();return}
   if(a==='askout'){confirmOut=me;render();return}
   if(a==='cancel'){confirmOut=null;render();return}
   b.disabled=true;
-  if(a==='pair'){const o=people.get(id); await act({action:'pair',me,other:id},s=>{const t=teamFor(me);return t?`You are Team ${cap(t.color)} with ${o.name}.`:'Paired.'})}
-  if(a==='trio') await act({action:'trio',me,colour:id},`You joined Team ${cap(id)}.`);
+  if(a==='pair'){confirmPair=null;const o=people.get(id); await act({action:'pair',me,other:id},s=>{const t=teamFor(me);return t?`You are Team ${cap(t.color)} with ${o.name}.`:'Paired.'})}
+  if(a==='trio'){confirmPair=null; await act({action:'trio',me,colour:id},`You joined Team ${cap(id)}.`)}
   if(a==='split') await act({action:'split',me},'Pair split. You can pick a new partner.');
   if(a==='out'){confirmOut=null; await act({action:'withdraw',me},`${p.name} has been withdrawn.`)}
   if(a==='back'){const s=await act({action:'restore',me:id},`Welcome back, ${people.get(id).name}.`); if(s){me=id;store.set('bw.me',me);render()}}
@@ -602,7 +613,7 @@ function teamBox(){
   const pid=$('#p-name').value,p=people.get(pid),t=pid&&teamFor(pid),w=WS[$('#p-ws').value];
   $('#p-team').innerHTML=!p?'Choose your workshop and name.':t?`<span class="tag" style="--pc:${CMAP[t.color]}"><i></i>Team ${cap(t.color)}</span> &nbsp;${t.members.map(m=>esc(m.name)).join(' and ')}`:`${esc(p.name)} does not have a partner yet. <a href="#${p.workshop}">Pick a partner</a>, or submit now and pair up later.`;
   const d=$('#p-deadline'); d.hidden=!w;
-  if(w){d.className='deadline'+(passed(w)?' passed':'');d.innerHTML=passed(w)?`<b>The deadline was ${esc(w.dl)}.</b> You can still submit. It will be marked as late.`:`<b>Deadline: ${esc(w.dl)}.</b> That is two days before your workshop.`}
+  if(w){d.className='deadline'+(passed(w)?' passed':'');d.innerHTML=passed(w)?`<b>The deadline was ${esc(w.dl)}.</b> You can still submit. It will be marked as late.`:`<b>Deadline: ${esc(w.dl)}.</b> That is two days before your workshop. Agree your answers with your partner before you submit.`}
   const mine=submitted[pid];
   $('#p-status').textContent=mine?`Last submitted ${fmtWhen(mine.at)}${p&&mine.by!==p.name?' by '+mine.by:''}${mine.late?' (late)':''}.`:'';
 }
