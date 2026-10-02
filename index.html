@@ -267,7 +267,7 @@ details.out li span{flex:1;text-decoration:line-through}
         <div><b>STEP 1</b><h3>Find your workshop</h3><p>Select it in the list above. Names from the sign-up form are already there.</p></div>
         <div><b>STEP 2</b><h3>Confirm your name</h3><p>Select "This is me". Picked the wrong name? Select "This isn't me". Not on the list? Add your name.</p></div>
         <div><b>STEP 3</b><h3>Pick a partner</h3><p>You work in pairs. Agree with your partner first, then one of you selects the other. Ideally, pair with someone who shares a client with you.</p></div>
-        <div><b>STEP 4</b><h3>Submit your problem list</h3><p>Describe the problem and how you think you will solve it. Only facilitators can read it.</p></div>
+        <div><b>STEP 4</b><h3>Submit your problem list</h3><p>Agree it with your partner, then one of you submits for the team. Only facilitators can read it.</p></div>
       </div>
     </div>
   </section>
@@ -320,6 +320,7 @@ details.out li span{flex:1;text-decoration:line-through}
       <div class="eyebrow">Problem list and solution logic</div>
       <h2 style="font-size:clamp(34px,6vw,52px);margin-top:6px">Submit your problem list</h2>
       <p class="muted" style="max-width:64ch;margin:8px 0 0;font-size:17px">Tell your facilitators what slows you down and how you think you would fix it. Rough is fine. They use it to prepare, and to help you scope something you can finish in the room.</p>
+      <div class="note" style="max-width:64ch;margin:14px 0 0"><b>One problem list per team.</b> Discuss the problem and your solution with your partner first. Then one of you submits it for both of you.</div>
     </div>
     <div class="plan">
       <form class="form" id="planForm" autocomplete="off">
@@ -330,6 +331,7 @@ details.out li span{flex:1;text-decoration:line-through}
             <div class="field"><label for="p-name">Your name</label><select id="p-name"></select></div>
           </div>
           <div class="teambox" id="p-team">Choose your workshop and name.</div>
+          <div class="deadline passed" id="p-already" hidden></div>
           <div class="deadline" id="p-deadline" hidden></div>
           <div class="field"><label for="p-client">Client or account you are building around</label><input type="text" id="p-client" maxlength="120" placeholder="Optional"></div>
         </fieldset>
@@ -359,7 +361,7 @@ details.out li span{flex:1;text-decoration:line-through}
           <p>Name a real task from last week, not a category. "Pulling coverage links into the monthly report" is better than "reporting".</p>
           <p>Say how long it takes now. That is how you will measure what you built.</p>
           <p>Keep confidential client details out. Describe the shape of the data, not the data.</p></div>
-        <div class="card"><h4>Changed your mind?</h4><p>Submit again. Your latest version replaces the earlier one. A copy of your answers stays on this device so you can edit them.</p></div>
+        <div class="card"><h4>Changed your mind?</h4><p>Submit again. Each team has one problem list, so the latest version from either of you replaces the earlier one.</p><p>A copy of your own answers stays on this device so you can edit them.</p></div>
       </aside>
     </div>
   </section>
@@ -613,9 +615,12 @@ function teamBox(){
   const pid=$('#p-name').value,p=people.get(pid),t=pid&&teamFor(pid),w=WS[$('#p-ws').value];
   $('#p-team').innerHTML=!p?'Choose your workshop and name.':t?`<span class="tag" style="--pc:${CMAP[t.color]}"><i></i>Team ${cap(t.color)}</span> &nbsp;${t.members.map(m=>esc(m.name)).join(' and ')}`:`${esc(p.name)} does not have a partner yet. <a href="#${p.workshop}">Pick a partner</a>, or submit now and pair up later.`;
   const d=$('#p-deadline'); d.hidden=!w;
-  if(w){d.className='deadline'+(passed(w)?' passed':'');d.innerHTML=passed(w)?`<b>The deadline was ${esc(w.dl)}.</b> You can still submit. It will be marked as late.`:`<b>Deadline: ${esc(w.dl)}.</b> That is two days before your workshop. Agree your answers with your partner before you submit.`}
-  const mine=submitted[pid];
-  $('#p-status').textContent=mine?`Last submitted ${fmtWhen(mine.at)}${p&&mine.by!==p.name?' by '+mine.by:''}${mine.late?' (late)':''}.`:'';
+  if(w){d.className='deadline'+(passed(w)?' passed':'');d.innerHTML=passed(w)?`<b>The deadline was ${esc(w.dl)}.</b> You can still submit. It will be marked as late.`:`<b>Deadline: ${esc(w.dl)}.</b> That is two days before your workshop.`}
+  const mine=submitted[pid], other=mine&&p&&mine.by!==p.name, al=$('#p-already');
+  al.hidden=!mine;
+  if(mine) al.innerHTML=other?`<b>${esc(mine.by)} already submitted for your team on ${esc(fmtWhen(mine.at))}.</b> You cannot see their answers here, so ask ${esc(first(mine.by))} for them first. If you submit, your version replaces theirs.`:`<b>You submitted on ${esc(fmtWhen(mine.at))}.</b> If you submit again, the new version replaces it for your team.`;
+  if(!busy) $('#p-submit').textContent=other?'Replace my team\'s problem list':mine?'Update problem list':'Submit problem list';
+  $('#p-status').textContent=mine?`Last submitted ${fmtWhen(mine.at)}${other?' by '+mine.by:''}${mine.late?' (late)':''}.`:'';
 }
 $('#p-ws').addEventListener('change',()=>{wsTouched=true;$('#p-name').value='';syncSelects()});
 $('#p-name').addEventListener('change',()=>{const v=$('#p-name').value;if(v){me=v;store.set('bw.me',me)}teamBox()});
@@ -629,9 +634,10 @@ $('#planForm').addEventListener('submit',async e=>{
   if(!p){toast('Choose your workshop and name first.');return}
   const d=draft(); if(!d.problem.trim()||!d.logic.trim()){toast('Fill in the problem and your solution logic.');return}
   const btn=$('#p-submit'); btn.disabled=true; btn.textContent='Submitting…';
-  const s=await act({action:'submit',me:pid,fields:d},s=>s.submittedLate?'Submitted. It is marked late because the deadline has passed.':'Submitted. Your facilitators will see it.');
+  const tm=teamFor(pid), forWho=tm?`for Team ${cap(tm.color)}`:'';
+  const s=await act({action:'submit',me:pid,fields:d},s=>s.submittedLate?`Submitted ${forWho}. It is marked late because the deadline has passed.`:`Submitted ${forWho}. Your facilitators will see it.`);
   if(s) store.set('bw.draft',d);
-  btn.disabled=false; btn.textContent='Submit problem list'; teamBox();
+  btn.disabled=false; teamBox();
 });
 
 /* ---------- facilitators ---------- */
